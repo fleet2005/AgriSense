@@ -23,8 +23,13 @@ from sklearn.ensemble import RandomForestClassifier
 import warnings
 from outbreak_prediction.ScorePredictor import DiseaseOutbreakPredictor
 from crop_recc.logistic import predict_closest_crop
-from Firebase import call_firebase
+import yagmail
+from dotenv import load_dotenv
+import random
 warnings.filterwarnings('ignore')
+
+
+load_dotenv()
 
 # Set page configuration
 st.set_page_config(
@@ -33,6 +38,74 @@ st.set_page_config(
     layout="wide",
     initial_sidebar_state="expanded"
 )
+SENDER_EMAIL = os.getenv("SENDER_EMAIL")
+SENDER_PASSWORD = os.getenv("SENDER_PASSWORD")
+
+RECEIVER_EMAIL = "100420vishalsrinivasan.gbkm@gmail.com"
+otp_store = {}
+
+def send_emailo(userEmail, otp):
+    try:
+        # Update host to `smtp.zoho.in`
+        yag = yagmail.SMTP(SENDER_EMAIL, SENDER_PASSWORD, host='smtp.zoho.in', port=465)
+        
+        subject = "Your OTP for Verification"
+        body = f"""
+        Hello,
+
+        Your OTP for verification is: {otp}
+
+        Best,
+        Vishal Srinivasan
+        """
+        
+        yag.send(userEmail, subject, body)
+        print("✅ OTP sent successfully!")
+    except Exception as e:
+        print("❌ Error sending OTP:", str(e))
+
+def send_otp(userEmail):
+     
+    otp = str(random.randint(100000, 999999))
+    st.session_state.otp2= otp # Generate a 6-digit OTP
+    otp_store[userEmail] = otp  # Store OTP temporarily
+    
+    # Send OTP to the user
+    send_emailo(userEmail, otp)
+    return otp
+
+
+def send_email(userName, userEmail, userAddress):
+    try:
+        # Update host to smtp.zoho.in
+        yag = yagmail.SMTP(SENDER_EMAIL, SENDER_PASSWORD, host='smtp.zoho.in', port=465)
+        
+        subject = "New User Submission"
+        body = f"""
+        Hello,
+
+        A new user has submitted their details:
+
+        Name: {userName}
+        Email: {userEmail}
+        Address: {userAddress}
+
+        Best,
+        Your Script
+        """
+        
+        yag.send(RECEIVER_EMAIL, subject, body)
+        print("✅ Email sent successfully!")
+    except Exception as e:
+        print("❌ Error sending email:", str(e))
+
+def verify_otp( user_otp):
+    stored_otp = user_otp  # Retrieve stored OTP
+    
+    if st.session_state.otp2 == stored_otp:
+        return 1  # OTP verified successfully
+    else:
+        return 0  # Invalid OTP
 
 # Custom CSS
 st.markdown("""
@@ -179,7 +252,7 @@ st.sidebar.markdown("# Manipur Precision Farming")
 page = st.sidebar.selectbox(
     "Select a service:",
     ["Home", "Disease Detection", "Outbreak Prediction System", 
-     "Weather Insights", "Crop Recommendations", "Iot Dashboard", "Soil Distribution", "Drone Hyperspectral Imagery"]
+     "Weather Insights", "Crop Recommendations", "Official Contact", "Soil Distribution", "Drone Hyperspectral Imagery"]
 )
 
 if page == "Home":
@@ -200,7 +273,7 @@ if page == "Home":
         - 🔮 Disease outbreak prediction and early warnings
         - 🌱 Soil health monitoring and recommendations
         - 🌤️ Weather insights and alerts
-        - 🚁 IoT based crop recommendation
+        - 🚁 Official Contact with Mail Storage
         - 📊 Crop performance analytics
         
         Select a service from the sidebar to begin.
@@ -412,49 +485,88 @@ elif page == "Outbreak Prediction System":
                 st.error("High Risk: Take preventive measures immediately.")
 
 
-elif page == "Iot Dashboard":
+elif page == "Official Contact":
 
-    st.markdown("<h1 class='main-header'>IOT Sensor Data Crop Prediction</h1>", unsafe_allow_html=True)
-    
-    # Call Firebase to retrieve the latest sensor data
-    # Make sure that your call_firebase() function returns the nested dictionary
-    # containing the sensor data (e.g., {'nitrogen': ..., 'phosphorus': ..., etc.})
-    data = call_firebase()  
-    
-    if data is not None:
-        # Extract sensor values from the returned data dictionary
-        nitrogen, phosphorus, potassium, soilMoisture, soilPH = data 
-
-        # Call your prediction function using the sensor data
-        predicted_crop = predict_closest_crop(nitrogen, phosphorus, potassium, soilPH, soilMoisture)
-        
-        # Display the predicted crop on the page
-        st.markdown("<h3 class='sub-header'>Predicted Crop Based on IOT Data</h3>", unsafe_allow_html=True)
-        st.markdown(f"""
-        <div style='padding: 15px; border-radius: 5px; margin-bottom: 1rem;'>
-            <h4>Best Crop to Grow: {predicted_crop}</h4>
-        </div>
-        """, unsafe_allow_html=True)
-        
-        # Optionally, display the sensor data for reference
-        st.markdown("<h4>Sensor Data:</h4>", unsafe_allow_html=True)
-        st.markdown(f"""
-        - Nitrogen: {nitrogen} kg/hectare  
-        - Phosphorus: {phosphorus} kg/hectare  
-        - Potassium: {potassium} kg/hectare  
-        - Soil pH: {soilPH}  
-        - Soil Moisture: {soilMoisture}%  
-        """, unsafe_allow_html=True)
-        
-        # Additional recommendations can be displayed here
-        st.markdown("<h4>Recommendations:</h4>", unsafe_allow_html=True)
+        st.markdown("<h1 class='main-header'>Official Contact</h1>", unsafe_allow_html=True)
+            
         st.markdown("""
-        - Ensure proper irrigation and drainage.
-        - Use fertilizers based on soil nutrient levels.
-        - Monitor crop health regularly.
-        """, unsafe_allow_html=True)
-    else:
-        st.error("No sensor data available from Firebase.")
+        Request a response from authorised Officials to discuss about your queries. Please provide your details below.
+        """)
+        
+        # Initialize session state for OTP verification
+        if "otp_verified" not in st.session_state:
+            st.session_state.otp_verified = False
+        if "otp" not in st.session_state:
+            st.session_state.otp = None
+        if "user_data" not in st.session_state:
+            st.session_state.user_data = {}
+
+        # Step 1: Collect name and email
+        st.markdown("<h3 class='sub-header'>Step 1: Enter Your Name and Email</h3>", unsafe_allow_html=True)
+        name = st.text_input("Full Name")
+        email = st.text_input("Email Address")
+
+        if st.button("Send OTP"):
+            if name and email:
+                # Generate and send OTP
+                otp = send_otp(email)  # Send OTP to the provided email
+                st.session_state.otp = otp  # Store OTP in session state
+                st.session_state.user_data["name"] = name
+                st.session_state.user_data["email"] = email
+                st.success(f"OTP sent to {email}. Please check your email.")
+            else:
+                st.error("Please enter your name and email.")
+
+        # Step 2: Verify OTP
+        if st.session_state.otp:
+            st.markdown("<h3 class='sub-header'>Step 2: Verify OTP</h3>", unsafe_allow_html=True)
+            otp_input = st.text_input("Enter OTP")
+
+            print(st.session_state.user_data["email"])
+            print(st.session_state.otp2)
+            print(otp_input)
+
+            if st.button("Verify OTP"):
+                if verify_otp( otp_input):
+                    st.session_state.otp_verified = True
+                    st.success("OTP verified successfully!")
+                else:
+                    st.error("Invalid OTP. Please try again.")
+
+        # Step 3: Collect email and address (only after OTP verification)
+        if st.session_state.otp_verified:
+            st.markdown("<h3 class='sub-header'>Step 3: Enter Your Address</h3>", unsafe_allow_html=True)
+            address = st.text_area("Address")
+
+        # Step 4: Submit button
+        if st.button("Submit"):
+            if address:
+                st.session_state.user_data["address"] = address
+
+                # Send email with form data using yagmail
+                try:
+                    # Extract user data
+                    userName = st.session_state.user_data["name"]
+                    userEmail = st.session_state.user_data["email"]
+                    userAddress = st.session_state.user_data["address"]
+
+                    # Replace with your Zoho Mail credentials
+                    SENDER_EMAIL = "saksham121212@zohomail.in"
+                    SENDER_PASSWORD = "xtcdu8atjh"  # Use an App Password if 2FA is enabled
+                    RECEIVER_EMAIL = userEmail
+                    # Send email
+                    send_email(userName, userEmail, userAddress)
+
+                    st.success("Form submitted successfully! We will contact you soon.")
+                    st.write("Collected Data:")
+                    st.json(st.session_state.user_data)
+                except Exception as e:
+                    st.error(f"Failed to send email. Error: {e}")
+            else:
+                st.error("Please enter your email and address.")
+
+
+
 
 
 elif page == "Crop Recommendations":
